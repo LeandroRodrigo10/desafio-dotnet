@@ -70,7 +70,7 @@ namespace Ambev.DeveloperEvaluation.Domain.Entities
 
         public void RecalculateTotals()
         {
-            TotalAmount = _items.Sum(i => i.Total)
+            TotalAmount = _items.Sum(i => i.Total);
         }
 
         private void EnsureActive()
