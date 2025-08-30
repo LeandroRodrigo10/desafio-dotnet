@@ -1,5 +1,7 @@
+using System;
 using System.Threading.Tasks;
 using Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
+using Ambev.DeveloperEvaluation.Application.Sales.GetSale;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -27,13 +29,13 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales
         }
 
         /// <summary>
-        /// Placeholder GET by Id (vamos implementar depois)
+        /// Get a Sale by Id
         /// </summary>
         [HttpGet("{id}")]
-        public async Task<ActionResult<CreateSaleResult>> GetById([FromRoute] Guid id)
+        public async Task<ActionResult<GetSaleResult>> GetById([FromRoute] Guid id)
         {
-            // Só um placeholder por enquanto
-            return Ok(new { Message = "To be implemented" });
+            var result = await _mediator.Send(new GetSaleCommand(id));
+            return Ok(result);
         }
     }
 }

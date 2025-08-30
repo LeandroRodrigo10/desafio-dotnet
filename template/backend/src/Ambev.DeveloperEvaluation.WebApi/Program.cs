@@ -25,14 +25,23 @@ public class Program
 
             builder.Services.AddControllers();
             builder.Services.AddEndpointsApiExplorer();
+            builder.Services.AddSwaggerGen(options =>
+            {
+                // evita conflitos de nomes E remove '+' de tipos aninhados
+                options.CustomSchemaIds(type =>
+                {
+                    var full = type.FullName ?? type.Name;
+                    return full.Replace("+", "."); // <- chave da correção
+                });
+            });
 
             builder.AddBasicHealthChecks();
-            builder.Services.AddSwaggerGen();
 
             builder.Services.AddDbContext<DefaultContext>(options =>
                 options.UseNpgsql(
                     builder.Configuration.GetConnectionString("DefaultConnection"),
-                    b => b.MigrationsAssembly("Ambev.DeveloperEvaluation.ORM")
+                    // alinhado com onde criamos as migrations
+                    b => b.MigrationsAssembly("Ambev.DeveloperEvaluation.WebApi")
                 )
             );
 

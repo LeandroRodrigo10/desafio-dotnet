@@ -23,8 +23,7 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
         {
             return await _context.Set<Sale>()
                 .AsNoTracking()
-                // Navegação de field configurada como "_items"
-                .Include("_items")
+                .Include(s => s.Items) // << ajustado
                 .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
         }
 
@@ -73,7 +72,6 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
 
             IQueryable<Sale> query = _context.Set<Sale>().AsNoTracking();
 
-            // Filtros
             if (!string.IsNullOrWhiteSpace(q))
             {
                 var qTrim = q.Trim();
@@ -84,41 +82,26 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
             }
 
             if (!string.IsNullOrWhiteSpace(customer))
-            {
-                var c = customer.Trim();
-                query = query.Where(s => s.Customer.Contains(c));
-            }
+                query = query.Where(s => s.Customer.Contains(customer.Trim()));
 
             if (!string.IsNullOrWhiteSpace(branch))
-            {
-                var b = branch.Trim();
-                query = query.Where(s => s.Branch.Contains(b));
-            }
+                query = query.Where(s => s.Branch.Contains(branch.Trim()));
 
             if (status.HasValue)
-            {
                 query = query.Where(s => s.Status == status.Value);
-            }
 
             if (dateFrom.HasValue)
-            {
                 query = query.Where(s => s.Date >= dateFrom.Value);
-            }
 
             if (dateTo.HasValue)
-            {
                 query = query.Where(s => s.Date <= dateTo.Value);
-            }
 
-            // Total antes da paginação
             var total = await query.CountAsync(cancellationToken);
 
-            // Ordenação
             query = ApplySorting(query, sort);
 
-            // Dados (inclui itens)
             var items = await query
-                .Include("_items")
+                .Include(s => s.Items) // << ajustado
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync(cancellationToken);
@@ -129,10 +112,7 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
         private static IQueryable<Sale> ApplySorting(IQueryable<Sale> query, string? sort)
         {
             if (string.IsNullOrWhiteSpace(sort))
-            {
-                // Default: mais recentes primeiro
                 return query.OrderByDescending(s => s.Date).ThenBy(s => s.Number);
-            }
 
             var s = sort.Trim();
             var desc = s.StartsWith("-");
@@ -140,13 +120,13 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
 
             return (key.ToLowerInvariant()) switch
             {
-                "date"       => desc ? query.OrderByDescending(x => x.Date)       : query.OrderBy(x => x.Date),
-                "customer"   => desc ? query.OrderByDescending(x => x.Customer)   : query.OrderBy(x => x.Customer),
-                "branch"     => desc ? query.OrderByDescending(x => x.Branch)     : query.OrderBy(x => x.Branch),
-                "number"     => desc ? query.OrderByDescending(x => x.Number)     : query.OrderBy(x => x.Number),
-                "status"     => desc ? query.OrderByDescending(x => x.Status)     : query.OrderBy(x => x.Status),
-                "totalamount"=> desc ? query.OrderByDescending(x => x.TotalAmount): query.OrderBy(x => x.TotalAmount),
-                _            => query.OrderByDescending(x => x.Date).ThenBy(x => x.Number)
+                "date" => desc ? query.OrderByDescending(x => x.Date) : query.OrderBy(x => x.Date),
+                "customer" => desc ? query.OrderByDescending(x => x.Customer) : query.OrderBy(x => x.Customer),
+                "branch" => desc ? query.OrderByDescending(x => x.Branch) : query.OrderBy(x => x.Branch),
+                "number" => desc ? query.OrderByDescending(x => x.Number) : query.OrderBy(x => x.Number),
+                "status" => desc ? query.OrderByDescending(x => x.Status) : query.OrderBy(x => x.Status),
+                "totalamount" => desc ? query.OrderByDescending(x => x.TotalAmount) : query.OrderBy(x => x.TotalAmount),
+                _ => query.OrderByDescending(x => x.Date).ThenBy(x => x.Number)
             };
         }
     }
