@@ -36,6 +36,30 @@ namespace Ambev.DeveloperEvaluation.Domain.Entities
         public IReadOnlyCollection<SaleItem> Items => _items.AsReadOnly();
         public decimal TotalAmount { get; private set; }
 
+        // ---------- NOVOS MÉTODOS ----------
+        public void Update(string number, DateTime date, string customer, string branch)
+        {
+            EnsureActive();
+            if (string.IsNullOrWhiteSpace(number)) throw new ArgumentException("Number is required", nameof(number));
+            if (string.IsNullOrWhiteSpace(customer)) throw new ArgumentException("Customer is required", nameof(customer));
+            if (string.IsNullOrWhiteSpace(branch)) throw new ArgumentException("Branch is required", nameof(branch));
+
+            Number = number.Trim();
+            Date = date;
+            Customer = customer.Trim();
+            Branch = branch.Trim();
+
+            RecalculateTotals();
+        }
+
+        public void ClearItems()
+        {
+            EnsureActive();
+            _items.Clear();
+            RecalculateTotals();
+        }
+        // -----------------------------------
+
         public void AddItem(string sku, string name, int quantity, decimal unitPrice, decimal discount = 0m)
         {
             EnsureActive();
