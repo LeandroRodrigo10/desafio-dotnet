@@ -4,7 +4,9 @@ using Ambev.DeveloperEvaluation.Application.Users.DeleteUser;
 using Ambev.DeveloperEvaluation.Application.Users.GetUser;
 using Ambev.DeveloperEvaluation.Application.Users.SearchUsers;
 using Ambev.DeveloperEvaluation.WebApi.Features.Users.CreateUser;
-using Ambev.DeveloperEvaluation.WebApi.Features.Users.UpdateUser; // <-- IMPORTANTE
+using Ambev.DeveloperEvaluation.WebApi.Features.Users.UpdateUser;
+using Ambev.DeveloperEvaluation.WebApi.Features.Users.DeleteUser;
+
 using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -85,13 +87,15 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Users
         /// Delete a user
         /// </summary>
         [HttpDelete("{id}")]
-        public async Task<ActionResult<DeleteUserResponse>> Delete(Guid id)
+        public async Task<ActionResult<DeleteUserResponse>> Delete([FromRoute] Guid id)
         {
             var result = await _mediator.Send(new DeleteUserCommand(id));
+
             if (!result.Success)
                 return NotFound(new { message = $"User with Id '{id}' not found" });
 
-            return Ok(result);
+            var response = _mapper.Map<DeleteUserResponse>(result);
+            return Ok(response);
         }
     }
 }
