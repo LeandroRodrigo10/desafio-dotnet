@@ -4,6 +4,7 @@ using Ambev.DeveloperEvaluation.Application.Users.DeleteUser;
 using Ambev.DeveloperEvaluation.Application.Users.GetUser;
 using Ambev.DeveloperEvaluation.Application.Users.SearchUsers;
 using Ambev.DeveloperEvaluation.WebApi.Features.Users.CreateUser;
+using Ambev.DeveloperEvaluation.WebApi.Features.Users.UpdateUser; // <-- IMPORTANTE
 using AutoMapper;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
@@ -52,15 +53,32 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Users
         [HttpPost]
         public async Task<ActionResult<CreateUserResponse>> Create([FromBody] CreateUserRequest request)
         {
-            // Mapeia o request WebApi -> Command da Application
             var command = _mapper.Map<Ambev.DeveloperEvaluation.Application.Users.CreateUser.CreateUserCommand>(request);
-
             var result = await _mediator.Send(command);
-
-            // Mapeia o resultado da Application -> Response da WebApi
             var response = _mapper.Map<CreateUserResponse>(result);
 
             return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
+        }
+
+        /// <summary>
+        /// Update an existing user
+        /// </summary>
+        [HttpPut("{id}")]
+        public async Task<ActionResult<UpdateUserResponse>> Update([FromRoute] Guid id, [FromBody] UpdateUserRequest request)
+        {
+            var command = new Ambev.DeveloperEvaluation.Application.Users.UpdateUser.UpdateUserCommand(id)
+            {
+                Username = request.Username,
+                Email = request.Email,
+                Phone = request.Phone,
+                Password = request.Password,
+                Role = (Ambev.DeveloperEvaluation.Domain.Enums.UserRole)request.Role,
+                Status = (Ambev.DeveloperEvaluation.Domain.Enums.UserStatus)request.Status
+            };
+
+            var result = await _mediator.Send(command);
+            var response = _mapper.Map<UpdateUserResponse>(result);
+            return Ok(response);
         }
 
         /// <summary>
