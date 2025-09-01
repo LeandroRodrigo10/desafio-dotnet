@@ -1,18 +1,27 @@
+using System;
 using AutoMapper;
+using Ambev.DeveloperEvaluation.Application.Users.GetUser;
 
-namespace Ambev.DeveloperEvaluation.WebApi.Features.Users.GetUser;
-
-/// <summary>
-/// Profile for mapping GetUser feature requests to commands
-/// </summary>
-public class GetUserProfile : Profile
+namespace Ambev.DeveloperEvaluation.WebApi.Features.Users.GetUser
 {
     /// <summary>
-    /// Initializes the mappings for GetUser feature
+    /// Profiles para o fluxo de GetUser:
+    /// - Guid -> GetUserCommand
+    /// - GetUserResult -> GetUserResponse
     /// </summary>
-    public GetUserProfile()
+    public class GetUserProfile : Profile
     {
-        CreateMap<Guid, Application.Users.GetUser.GetUserCommand>()
-            .ConstructUsing(id => new Application.Users.GetUser.GetUserCommand(id));
+        public GetUserProfile()
+        {
+            CreateMap<Guid, GetUserCommand>()
+                .ConstructUsing(id => new GetUserCommand(id));
+
+            CreateMap<GetUserResult, GetUserResponse>()
+                .ForMember(d => d.Name, opt => opt.MapFrom(s => s.Name))
+                .ForMember(d => d.Email, opt => opt.MapFrom(s => s.Email))
+                .ForMember(d => d.Phone, opt => opt.MapFrom(s => s.Phone))
+                .ForMember(d => d.Role, opt => opt.MapFrom(s => s.Role))     
+                .ForMember(d => d.Status, opt => opt.MapFrom(s => s.Status));  
+        }
     }
 }

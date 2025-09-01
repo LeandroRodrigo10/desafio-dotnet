@@ -11,7 +11,7 @@ namespace Ambev.DeveloperEvaluation.Common.Security;
 /// </summary>
 public class JwtTokenGenerator : IJwtTokenGenerator
 {
-    private readonly IConfiguration _configuration;
+    private readonly string _secretKey;
 
     /// <summary>
     /// Initializes a new instance of the JWT token generator.
@@ -19,7 +19,8 @@ public class JwtTokenGenerator : IJwtTokenGenerator
     /// <param name="configuration">Application configuration containing the necessary keys for token generation.</param>
     public JwtTokenGenerator(IConfiguration configuration)
     {
-        _configuration = configuration;
+        _secretKey = configuration["Jwt:SecretKey"]
+            ?? throw new InvalidOperationException("Jwt:SecretKey is missing from configuration.");
     }
 
     /// <summary>
@@ -39,25 +40,31 @@ public class JwtTokenGenerator : IJwtTokenGenerator
     public string GenerateToken(IUser user)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
-        var key = Encoding.ASCII.GetBytes(_configuration["Jwt:SecretKey"]);
+        var key = CreateSigningKey();
 
         var claims = new[]
         {
-           new Claim(ClaimTypes.NameIdentifier, user.Id),
-           new Claim(ClaimTypes.Name, user.Username),
-           new Claim(ClaimTypes.Role, user.Role)
-       };
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Role, user.Role)
+        };
 
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
             Expires = DateTime.UtcNow.AddHours(8),
             SigningCredentials = new SigningCredentials(
-                new SymmetricSecurityKey(key),
+                key,
                 SecurityAlgorithms.HmacSha256Signature)
         };
 
         var token = tokenHandler.CreateToken(tokenDescriptor);
         return tokenHandler.WriteToken(token);
+    }
+
+    private SymmetricSecurityKey CreateSigningKey()
+    {
+        // o ! informa ao analisador que _secretKey não é nula (já garantimos acima)
+        return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey!));
     }
 }
