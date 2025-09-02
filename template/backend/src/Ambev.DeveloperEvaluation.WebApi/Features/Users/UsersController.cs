@@ -8,6 +8,7 @@ using Ambev.DeveloperEvaluation.WebApi.Features.Users.UpdateUser;
 using Ambev.DeveloperEvaluation.WebApi.Features.Users.DeleteUser;
 
 using AutoMapper;
+using Microsoft.AspNetCore.Authorization;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,6 +16,8 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Users
 {
     [ApiController]
     [Route("api/[controller]")]
+    // Protect all User endpoints with JWT authentication
+    [Authorize]
     public class UsersController : ControllerBase
     {
         private readonly IMediator _mediator;

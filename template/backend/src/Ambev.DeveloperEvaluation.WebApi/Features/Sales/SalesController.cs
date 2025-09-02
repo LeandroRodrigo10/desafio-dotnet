@@ -7,11 +7,14 @@ using Ambev.DeveloperEvaluation.Application.Sales.UpdateSale;
 using Ambev.DeveloperEvaluation.Application.Sales.DeleteSale;
 using MediatR;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales
 {
     [ApiController]
     [Route("api/[controller]")]
+    // Protect all Sales endpoints with JWT authentication
+    [Authorize]
     public class SalesController : ControllerBase
     {
         private readonly IMediator _mediator;

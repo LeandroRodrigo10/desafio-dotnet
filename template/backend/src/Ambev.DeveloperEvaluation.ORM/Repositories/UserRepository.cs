@@ -1,4 +1,5 @@
-﻿using System;
+﻿#nullable enable
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
@@ -7,51 +8,87 @@ using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Enums;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Ambev.DeveloperEvaluation.ORM.Repositories
 {
-    public class UserRepository : IUserRepository
+    public sealed class UserRepository : IUserRepository
     {
-        private readonly DefaultContext _context;
+        private readonly DefaultContext _db;
+        private readonly IMemoryCache? _cache;
 
-        public UserRepository(DefaultContext context)
+        public UserRepository(DefaultContext db, IMemoryCache? cache = null)
         {
-            _context = context;
+            _db = db ?? throw new ArgumentNullException(nameof(db));
+            _cache = cache;
         }
 
-        public async Task<User?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task<User?> GetByIdAsync(Guid id, CancellationToken ct = default)
         {
-            return await _context.Set<User>()
-                .AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
+            var cacheKey = $"user:{id}";
+            if (_cache != null && _cache.TryGetValue(cacheKey, out object? obj) && obj is User cached)
+                return cached;
+
+            var user = await _db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == id, ct);
+
+            if (user != null && _cache != null)
+                _cache.Set(cacheKey, user, TimeSpan.FromMinutes(5));
+
+            return user;
         }
 
-        public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
+        public async Task<User?> GetByEmailAsync(string email, CancellationToken ct = default)
         {
-            return await _context.Set<User>()
-                .AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Email == email, cancellationToken);
+            if (string.IsNullOrWhiteSpace(email)) return null;
+            var key = email.Trim().ToLowerInvariant();
+            var cacheKey = $"user:email:{key}";
+
+            if (_cache != null && _cache.TryGetValue(cacheKey, out object? obj) && obj is User cached)
+                return cached;
+
+            var user = await _db.Users.AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Email.ToLower() == key, ct);
+
+            if (user != null && _cache != null)
+                _cache.Set(cacheKey, user, TimeSpan.FromMinutes(5));
+
+            return user;
         }
 
-        public async Task AddAsync(User user, CancellationToken cancellationToken = default)
+        // Assinatura correta: método não retorna valor
+        public async Task AddAsync(User user, CancellationToken ct = default)
         {
-            await _context.Set<User>().AddAsync(user, cancellationToken);
-            await _context.SaveChangesAsync(cancellationToken);
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            await _db.Users.AddAsync(user, ct);
+            await _db.SaveChangesAsync(ct);
+
+            _cache?.Remove($"user:{user.Id}");
+            if (!string.IsNullOrWhiteSpace(user.Email))
+                _cache?.Remove($"user:email:{user.Email.Trim().ToLowerInvariant()}");
         }
 
-        public async Task UpdateAsync(User user, CancellationToken cancellationToken = default)
+        public async Task UpdateAsync(User user, CancellationToken ct = default)
         {
-            _context.Set<User>().Update(user);
-            await _context.SaveChangesAsync(cancellationToken);
+            if (user == null) throw new ArgumentNullException(nameof(user));
+            _db.Users.Update(user);
+            await _db.SaveChangesAsync(ct);
+
+            _cache?.Remove($"user:{user.Id}");
+            if (!string.IsNullOrWhiteSpace(user.Email))
+                _cache?.Remove($"user:email:{user.Email.Trim().ToLowerInvariant()}");
         }
 
-        public async Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
+        public async Task DeleteAsync(Guid id, CancellationToken ct = default)
         {
-            var entity = await _context.Set<User>().FirstOrDefaultAsync(u => u.Id == id, cancellationToken);
-            if (entity is null) return;
+            var entity = await _db.Users.FirstOrDefaultAsync(u => u.Id == id, ct);
+            if (entity == null) return;
 
-            _context.Set<User>().Remove(entity);
-            await _context.SaveChangesAsync(cancellationToken);
+            _db.Users.Remove(entity);
+            await _db.SaveChangesAsync(ct);
+
+            _cache?.Remove($"user:{id}");
+            if (!string.IsNullOrWhiteSpace(entity.Email))
+                _cache?.Remove($"user:email:{entity.Email.Trim().ToLowerInvariant()}");
         }
 
         public async Task<(IReadOnlyList<User> Items, int Total)> SearchAsync(
@@ -62,22 +99,30 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
             UserStatus? status = null,
             UserRole? role = null,
             string? sort = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken ct = default)
         {
-            if (page <= 0) page = 1;
-            if (pageSize <= 0) pageSize = 10;
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 10;
 
-            IQueryable<User> query = _context.Set<User>().AsNoTracking();
+            var query = _db.Users.AsNoTracking().AsQueryable();
 
-            // Busca textual em Username/Email (contains)
+            // busca livre em Username/Email/Phone
             if (!string.IsNullOrWhiteSpace(q))
             {
-                var t = q.Trim();
-                query = query.Where(u => u.Username.Contains(t) || u.Email.Contains(t));
+                var term = q.Trim();
+                query = query.Where(u =>
+                    EF.Functions.ILike(u.Username, $"%{term}%") ||
+                    EF.Functions.ILike(u.Email, $"%{term}%") ||
+                    (u.Phone != null && u.Phone.Contains(term)));
             }
 
+            // filtro por email
             if (!string.IsNullOrWhiteSpace(email))
-                query = query.Where(u => u.Email == email);
+            {
+                var e = email.Trim().ToLowerInvariant();
+                query = query.Where(u =>
+                    u.Email.ToLower() == e || EF.Functions.ILike(u.Email, $"%{e}%"));
+            }
 
             if (status.HasValue)
                 query = query.Where(u => u.Status == status.Value);
@@ -85,37 +130,22 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
             if (role.HasValue)
                 query = query.Where(u => u.Role == role.Value);
 
-            var total = await query.CountAsync(cancellationToken);
+            // ordenação
+            query = (sort?.ToLowerInvariant()) switch
+            {
+                "email" => query.OrderBy(u => u.Email).ThenBy(u => u.Username),
+                "createdat" => query.OrderBy(u => u.CreatedAt),
+                "updatedat" => query.OrderBy(u => u.UpdatedAt),
+                "role" => query.OrderBy(u => u.Role).ThenBy(u => u.Username),
+                "status" => query.OrderBy(u => u.Status).ThenBy(u => u.Username),
+                _ => query.OrderBy(u => u.Username)
+            };
 
-            query = ApplySorting(query, sort);
-
-            var items = await query
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync(cancellationToken);
+            var total = await query.CountAsync(ct);
+            var skip = (page - 1) * pageSize;
+            var items = await query.Skip(skip).Take(pageSize).ToListAsync(ct);
 
             return (items, total);
-        }
-
-        private static IQueryable<User> ApplySorting(IQueryable<User> query, string? sort)
-        {
-            // Padrão: Username asc, depois Email
-            if (string.IsNullOrWhiteSpace(sort))
-                return query.OrderBy(u => u.Username).ThenBy(u => u.Email);
-
-            var s = sort.Trim();
-            var desc = s.StartsWith("-");
-            var key = desc ? s[1..] : s;
-
-            return key.ToLowerInvariant() switch
-            {
-                "username" => desc ? query.OrderByDescending(x => x.Username) : query.OrderBy(x => x.Username),
-                "email" => desc ? query.OrderByDescending(x => x.Email) : query.OrderBy(x => x.Email),
-                "status" => desc ? query.OrderByDescending(x => x.Status) : query.OrderBy(x => x.Status),
-                "role" => desc ? query.OrderByDescending(x => x.Role) : query.OrderBy(x => x.Role),
-                "createdat" => desc ? query.OrderByDescending(x => x.CreatedAt) : query.OrderBy(x => x.CreatedAt),
-                _ => query.OrderBy(x => x.Username).ThenBy(x => x.Email)
-            };
         }
     }
 }

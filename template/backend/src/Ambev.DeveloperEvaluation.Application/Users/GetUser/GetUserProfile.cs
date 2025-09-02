@@ -1,18 +1,23 @@
 using AutoMapper;
 using Ambev.DeveloperEvaluation.Domain.Entities;
 
-namespace Ambev.DeveloperEvaluation.Application.Users.GetUser;
-
-/// <summary>
-/// Profile for mapping between User entity and GetUserResponse
-/// </summary>
-public class GetUserProfile : Profile
+namespace Ambev.DeveloperEvaluation.Application.Users.GetUser
 {
     /// <summary>
-    /// Initializes the mappings for GetUser operation
+    /// Profile for mapping Domain.User -> GetUserResult (Application)
     /// </summary>
-    public GetUserProfile()
+    public class GetUserProfile : Profile
     {
-        CreateMap<User, GetUserResult>();
+        public GetUserProfile()
+        {
+            CreateMap<User, GetUserResult>()
+                // Nome do domínio é Username; o DTO expõe Name
+                .ForMember(d => d.Name, opt => opt.MapFrom(s => s.Username))
+                .ForMember(d => d.Email, opt => opt.MapFrom(s => s.Email))
+                .ForMember(d => d.Phone, opt => opt.MapFrom(s => s.Phone))
+                .ForMember(d => d.Role, opt => opt.MapFrom(s => s.Role))
+                .ForMember(d => d.Status, opt => opt.MapFrom(s => s.Status));
+            // Id é mapeado por convenção
+        }
     }
 }
