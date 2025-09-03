@@ -80,7 +80,9 @@ public class Program
 
             builder.RegisterDependencies();
 
+            // Serviços de autenticação e segurança
             builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
+            builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 
             builder.Services.AddAutoMapper(typeof(Program).Assembly, typeof(ApplicationLayer).Assembly);
 

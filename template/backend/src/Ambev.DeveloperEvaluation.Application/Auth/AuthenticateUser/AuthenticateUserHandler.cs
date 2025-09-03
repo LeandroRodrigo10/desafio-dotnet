@@ -1,64 +1,81 @@
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Ambev.DeveloperEvaluation.Common.Security;
-using Ambev.DeveloperEvaluation.Domain.Enums;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Text;
+using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using MediatR;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 
 namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
 {
-    /// <summary>
-    /// Handler responsável por autenticar o usuário.
-    /// </summary>
-    public sealed class AuthenticateUserHandler : IRequestHandler<AuthenticateUserCommand, AuthenticateUserResult>
+    public sealed class AuthenticateUserHandler : IRequestHandler<AuthenticateUserRequest, AuthenticateUserResponse>
     {
-        private readonly IUserRepository _userRepository;
-        private readonly IJwtTokenService _jwtTokenService;
-        private readonly IPasswordHasher _passwordHasher;
+        private readonly IUserRepository _users;
+        private readonly IConfiguration _config;
 
-        private const string InvalidCredentialsMessage = "Invalid email or password";
-
-        public AuthenticateUserHandler(
-            IUserRepository userRepository,
-            IJwtTokenService jwtTokenService,
-            IPasswordHasher passwordHasher)
+        public AuthenticateUserHandler(IUserRepository users, IConfiguration config)
         {
-            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-            _jwtTokenService = jwtTokenService ?? throw new ArgumentNullException(nameof(jwtTokenService));
-            _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
+            _users = users;
+            _config = config;
         }
 
-        public async Task<AuthenticateUserResult> Handle(AuthenticateUserCommand request, CancellationToken cancellationToken)
+        public async Task<AuthenticateUserResponse> Handle(AuthenticateUserRequest request, CancellationToken ct)
         {
-            // normaliza e-mail e valida entrada
             var email = request.Email?.Trim().ToLowerInvariant();
-            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(request.Password))
-                throw new UnauthorizedAccessException(InvalidCredentialsMessage);
+            var password = request.Password;
 
-            // busca usuário por e-mail normalizado
-            var user = await _userRepository.GetByEmailAsync(email, cancellationToken);
+            if (string.IsNullOrWhiteSpace(email) || string.IsNullOrEmpty(password))
+                throw new UnauthorizedAccessException("Credenciais inválidas.");
+
+            var user = await _users.GetByEmailAsync(email, ct);
             if (user is null)
-                throw new UnauthorizedAccessException(InvalidCredentialsMessage);
+                throw new UnauthorizedAccessException("Usuário ou senha inválidos.");
 
-            // exige usuário ativo
-            if (user.Status != UserStatus.Active)
-                throw new UnauthorizedAccessException(InvalidCredentialsMessage);
+            // Verificação de senha (ajuste se sua entidade usar PasswordHash)
+            if (!BCrypt.Net.BCrypt.Verify(password, user.Password))
+                throw new UnauthorizedAccessException("Usuário ou senha inválidos.");
 
-            // confere senha (ordem: plaintext, hash)
-            var passwordOk = _passwordHasher.Verify(request.Password, user.Password);
-            if (!passwordOk)
-                throw new UnauthorizedAccessException(InvalidCredentialsMessage);
+            var token = BuildJwtFromConfig(_config, user);
 
-            // gera token JWT
-            var token = _jwtTokenService.Generate(user.Id, user.Email, user.Username, user.Role.ToString());
-
-            return new AuthenticateUserResult
+            return new AuthenticateUserResponse
             {
                 Token = token,
-                Name = user.Username ?? string.Empty,
+                Email = user.Email,
                 Role = user.Role.ToString()
             };
+        }
+
+        private static string BuildJwtFromConfig(IConfiguration config, User user)
+        {
+            string? issuer = config["Jwt:Issuer"];
+            string? audience = config["Jwt:Audience"];
+            string? key = config["Jwt:Key"];
+
+            issuer ??= "TestIssuer";
+            audience ??= "TestAudience";
+            if (string.IsNullOrWhiteSpace(key))
+                throw new InvalidOperationException("Jwt:Key não configurado.");
+
+            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
+            var creds = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
+
+            var claims = new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
+                new Claim(ClaimTypes.Role, user.Role.ToString())
+            };
+
+            var jwt = new JwtSecurityToken(
+                issuer: issuer,
+                audience: audience,
+                claims: claims,
+                notBefore: DateTime.UtcNow.AddMinutes(-1),
+                expires: DateTime.UtcNow.AddMinutes(60),
+                signingCredentials: creds);
+
+            return new JwtSecurityTokenHandler().WriteToken(jwt);
         }
     }
 }

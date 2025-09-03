@@ -1,109 +1,33 @@
 using System.Threading;
 using System.Threading.Tasks;
-using System.Linq;
-using Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser;
-using Ambev.DeveloperEvaluation.WebApi.Common;
-using Ambev.DeveloperEvaluation.WebApi.Features.Auth.AuthenticateUserFeature;
-using Ambev.DeveloperEvaluation.Common.Validation; // <-- para ValidationErrorDetail
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using FluentValidation;
+// Alias para usar as classes do Application
+using AppAuth = Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Auth
 {
-    /// <summary>
-    /// Controller for authentication operations
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
-    public class AuthController : BaseController
+    public class AuthController : ControllerBase
     {
         private readonly IMediator _mediator;
 
-        /// <summary>
-        /// Initializes a new instance of AuthController
-        /// </summary>
-        public AuthController(IMediator mediator)
-        {
-            _mediator = mediator;
-        }
+        public AuthController(IMediator mediator) => _mediator = mediator;
 
-        /// <summary>
-        /// Authenticates a user with email and password and returns a JWT token.
-        /// </summary>
-        [HttpPost]
         [AllowAnonymous]
-        [ProducesResponseType(typeof(ApiResponseWithData<AuthenticateUserResponse>), StatusCodes.Status200OK)]
-        [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
-        [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+        [HttpPost]
         public async Task<IActionResult> AuthenticateUser(
-            [FromBody] AuthenticateUserRequest request,
-            CancellationToken cancellationToken)
+            [FromBody] AppAuth.AuthenticateUserRequest request,
+            CancellationToken ct)
         {
-            if (request is null || string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
-            {
-                return BadRequest(new ApiResponse
-                {
-                    Success = false,
-                    Message = "Email and password are required"
-                });
-            }
+            var result = await _mediator.Send(request, ct);
 
-            try
-            {
-                var command = new AuthenticateUserCommand
-                {
-                    Email = request.Email,
-                    Password = request.Password
-                };
+            if (result is null || string.IsNullOrWhiteSpace(result.Token) || result.Token.Split('.').Length != 3)
+                return Unauthorized(new { error = "Token inválido gerado pelo servidor." });
 
-                var result = await _mediator.Send(command, cancellationToken);
-
-                if (result is null || string.IsNullOrWhiteSpace(result.Token))
-                {
-                    return Unauthorized(new ApiResponse
-                    {
-                        Success = false,
-                        Message = "Invalid email or password"
-                    });
-                }
-
-                var response = new AuthenticateUserResponse
-                {
-                    Token = result.Token,
-                    Email = request.Email,
-                    Name = result.Name ?? string.Empty,
-                    Role = result.Role ?? string.Empty
-                };
-
-                return Ok(new ApiResponseWithData<AuthenticateUserResponse>
-                {
-                    Success = true,
-                    Message = "User authenticated successfully",
-                    Data = response
-                });
-            }
-            catch (ValidationException ex)
-            {
-                return BadRequest(new ApiResponse
-                {
-                    Success = false,
-                    Message = "Validation Failed",
-                    // Usa o cast já utilizado no domínio: (ValidationErrorDetail)e
-                    Errors = (ex.Errors?.Select(e => (ValidationErrorDetail)e))
-                             ?? Enumerable.Empty<ValidationErrorDetail>()
-                });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Unauthorized(new ApiResponse
-                {
-                    Success = false,
-                    Message = "Invalid email or password"
-                });
-            }
+            return Ok(new { data = new { token = result.Token } });
         }
     }
 }

@@ -1,65 +1,56 @@
-using System;
-using System.Linq;
 using System.Collections.Generic;
+using System.Linq;
+using Ambev.DeveloperEvaluation.ORM;
+using Ambev.DeveloperEvaluation.WebApi; // Program
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Ambev.DeveloperEvaluation.ORM;
 
 namespace Ambev.DeveloperEvaluation.IntegrationTests.Infrastructure
 {
-    /// <summary>
-    /// Sobe a WebApi em memória para testes de integração,
-    /// substituindo o PostgreSQL por EF Core InMemory e injetando config JWT.
-    /// </summary>
-    public sealed class CustomWebApplicationFactory : WebApplicationFactory<Ambev.DeveloperEvaluation.WebApi.Program>
+    public class CustomWebApplicationFactory : WebApplicationFactory<Program>
     {
-        protected override IHost CreateHost(IHostBuilder builder)
-        {
-            // Força ambiente "Development"
-            builder.UseEnvironment("Development");
+        private const string InMemoryDbName = "IntegrationTestsDb";
 
-            // 🔑 Injeta configuração em memória para JWT, evitando 500 no /api/Auth
-            builder.ConfigureAppConfiguration(config =>
+        protected override void ConfigureWebHost(IWebHostBuilder builder)
+        {
+            builder.UseEnvironment("Testing");
+
+            builder.ConfigureAppConfiguration((ctx, config) =>
             {
-                var mem = new Dictionary<string, string?>
+                var jwtTestConfig = new Dictionary<string, string?>
                 {
-                    ["Jwt:Issuer"] = "test-issuer",
-                    ["Jwt:Audience"] = "test-audience",
-                    // chave de 32+ chars para HMAC-SHA256
-                    ["Jwt:Key"] = "super-secret-test-key-1234567890-abcdef",
-                    ["Jwt:ExpiresMinutes"] = "60",
-                    // Opcional: ConnectionString dummy (não será usada com InMemory)
-                    ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test;Password=test"
+                    ["Jwt:Issuer"] = "TestIssuer",
+                    ["Jwt:Audience"] = "TestAudience",
+                    // Chave apenas para testes de integração
+                    ["Jwt:Key"] = "SuperSecretKeyForIntegrationTests_ChangeMe"
                 };
-                config.AddInMemoryCollection(mem!);
+
+                config.AddInMemoryCollection(jwtTestConfig);
             });
 
             builder.ConfigureServices(services =>
             {
-                // Remove a configuração original do DbContext (PostgreSQL)
-                var dbContextDescriptor = services.SingleOrDefault(
-                    d => d.ServiceType == typeof(DbContextOptions<DefaultContext>)
-                );
-                if (dbContextDescriptor is not null)
-                    services.Remove(dbContextDescriptor);
+                var dbDescriptor = services.SingleOrDefault(
+                    d => d.ServiceType == typeof(DbContextOptions<DefaultContext>));
 
-                // Adiciona o DbContext InMemory para os testes
+                if (dbDescriptor != null)
+                    services.Remove(dbDescriptor);
+
                 services.AddDbContext<DefaultContext>(options =>
                 {
-                    options.UseInMemoryDatabase($"IntegrationTestsDb_{Guid.NewGuid()}");
+                    options.UseInMemoryDatabase(InMemoryDbName);
                 });
 
-                // Garante que o banco in-memory está criado
-                using var sp = services.BuildServiceProvider();
+                var sp = services.BuildServiceProvider();
                 using var scope = sp.CreateScope();
-                var ctx = scope.ServiceProvider.GetRequiredService<DefaultContext>();
-                ctx.Database.EnsureCreated();
-            });
+                var db = scope.ServiceProvider.GetRequiredService<DefaultContext>();
 
-            return base.CreateHost(builder);
+                db.Database.EnsureDeleted();
+                db.Database.EnsureCreated();
+            });
         }
     }
 }

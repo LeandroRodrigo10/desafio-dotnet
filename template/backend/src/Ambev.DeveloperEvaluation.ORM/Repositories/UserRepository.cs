@@ -40,17 +40,41 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
         public async Task<User?> GetByEmailAsync(string email, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(email)) return null;
+
             var key = email.Trim().ToLowerInvariant();
             var cacheKey = $"user:email:{key}";
 
             if (_cache != null && _cache.TryGetValue(cacheKey, out object? obj) && obj is User cached)
                 return cached;
 
+            // 🔎 Debug temporário para entender o cenário nos testes
+            try
+            {
+                var total = await _db.Users.CountAsync(ct);
+                Console.WriteLine($"[REPO][GetByEmailAsync] Procurando por '{key}' (total users: {total})");
+            }
+            catch
+            {
+                // ignore qualquer falha de log
+            }
+
+            // ✅ Comparação robusta: TRIM + ToLower no lado do BD também
             var user = await _db.Users.AsNoTracking()
-                .FirstOrDefaultAsync(u => u.Email.ToLower() == key, ct);
+                .FirstOrDefaultAsync(u =>
+                    u.Email != null &&
+                    u.Email.Trim().ToLower() == key, ct);
+
+            if (user == null)
+            {
+                // Tentativa extra (útil se o provedor/banco tratar casing de forma estranha)
+                user = await _db.Users.AsNoTracking()
+                    .FirstOrDefaultAsync(u => u.Email == email, ct);
+            }
 
             if (user != null && _cache != null)
                 _cache.Set(cacheKey, user, TimeSpan.FromMinutes(5));
+
+            Console.WriteLine($"[REPO][GetByEmailAsync] Encontrou? {(user != null ? "SIM" : "NÃO")} -> '{user?.Email}'");
 
             return user;
         }
