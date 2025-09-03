@@ -1,44 +1,20 @@
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.IdentityModel.Tokens;
-using System;
-using System.Text;
 
 namespace Ambev.DeveloperEvaluation.Common.Security
 {
+    /// <summary>
+    /// Extensões de autenticação/JWT.
+    /// Observação: Esta extensão registra apenas o serviço de geração de token.
+    /// A configuração do JwtBearer (AddAuthentication/AddJwtBearer) é feita no Program.cs.
+    /// </summary>
     public static class AuthenticationExtension
     {
         public static IServiceCollection AddJwtAuthentication(this IServiceCollection services, IConfiguration configuration)
         {
-            services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
-
-            var secretKey = configuration["Jwt:SecretKey"]?.ToString();
-            ArgumentException.ThrowIfNullOrWhiteSpace(secretKey);
-
-            var key = Encoding.ASCII.GetBytes(secretKey);
-
-            services.AddAuthentication(x =>
-            {
-                x.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-                x.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            })
-            .AddJwtBearer(x =>
-            {
-                x.RequireHttpsMetadata = false;
-                x.SaveToken = true;
-                x.TokenValidationParameters = new TokenValidationParameters
-                {
-                    ValidateIssuerSigningKey = true,
-                    IssuerSigningKey = new SymmetricSecurityKey(key),
-                    ValidateIssuer = false,
-                    ValidateAudience = false,
-                    ClockSkew = TimeSpan.Zero
-                };
-            });
-
-            services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
-
+            // Registramos o serviço responsável por gerar o token JWT.
+            // O JwtTokenService depende de IConfiguration e será resolvido pelo DI.
+            services.AddSingleton<IJwtTokenService, JwtTokenService>();
             return services;
         }
     }

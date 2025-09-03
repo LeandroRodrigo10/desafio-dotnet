@@ -1,50 +1,64 @@
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Ambev.DeveloperEvaluation.Common.Security;
+using Ambev.DeveloperEvaluation.Domain.Enums;        // UserStatus
 using Ambev.DeveloperEvaluation.Domain.Repositories;
-using Ambev.DeveloperEvaluation.Domain.Specifications;
 using MediatR;
 
 namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
 {
-    public class AuthenticateUserHandler : IRequestHandler<AuthenticateUserCommand, AuthenticateUserResult>
+    public sealed class AuthenticateUserHandler : IRequestHandler<AuthenticateUserCommand, AuthenticateUserResult>
     {
         private readonly IUserRepository _userRepository;
+        private readonly IJwtTokenService _jwtTokenService;
         private readonly IPasswordHasher _passwordHasher;
-        private readonly IJwtTokenGenerator _jwtTokenGenerator;
 
         public AuthenticateUserHandler(
             IUserRepository userRepository,
-            IPasswordHasher passwordHasher,
-            IJwtTokenGenerator jwtTokenGenerator)
+            IJwtTokenService jwtTokenService,
+            IPasswordHasher passwordHasher)
         {
-            _userRepository = userRepository;
-            _passwordHasher = passwordHasher;
-            _jwtTokenGenerator = jwtTokenGenerator;
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _jwtTokenService = jwtTokenService ?? throw new ArgumentNullException(nameof(jwtTokenService));
+            _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
         }
 
         public async Task<AuthenticateUserResult> Handle(AuthenticateUserCommand request, CancellationToken cancellationToken)
         {
-            var user = await _userRepository.GetByEmailAsync(request.Email, cancellationToken);
-            
-            if (user == null || !_passwordHasher.VerifyPassword(request.Password, user.Password))
-            {
-                throw new UnauthorizedAccessException("Invalid credentials");
-            }
+            var emailInput = request.Email?.Trim();
+            if (string.IsNullOrWhiteSpace(emailInput) || string.IsNullOrWhiteSpace(request.Password))
+                throw new UnauthorizedAccessException("Invalid email or password");
 
-            var activeUserSpec = new ActiveUserSpecification();
-            if (!activeUserSpec.IsSatisfiedBy(user))
-            {
-                throw new UnauthorizedAccessException("User is not active");
-            }
+            // tenta com o email como veio e também normalizado em lower-case
+            var normalizedEmail = emailInput.ToLowerInvariant();
+            var user =
+                await _userRepository.GetByEmailAsync(emailInput, cancellationToken)
+                ?? await _userRepository.GetByEmailAsync(normalizedEmail, cancellationToken);
 
-            var token = _jwtTokenGenerator.GenerateToken(user);
+            if (user is null)
+                throw new UnauthorizedAccessException("Invalid email or password");
+
+            // bloqueia quem não estiver ativo
+            if (user.Status != UserStatus.Active)
+                throw new UnauthorizedAccessException("Invalid email or password");
+
+            // Ajuste crítico: muitas libs esperam Verify(hash, plain)
+            var passwordOk = _passwordHasher.Verify(user.Password, request.Password);
+            if (!passwordOk)
+                throw new UnauthorizedAccessException("Invalid email or password");
+
+            var token = _jwtTokenService.Generate(
+                user.Id,
+                user.Email,
+                user.Username,
+                user.Role.ToString()
+            );
 
             return new AuthenticateUserResult
             {
                 Token = token,
-                Email = user.Email,
-                Name = user.Username,
+                Name = user.Username ?? string.Empty,
                 Role = user.Role.ToString()
             };
         }
