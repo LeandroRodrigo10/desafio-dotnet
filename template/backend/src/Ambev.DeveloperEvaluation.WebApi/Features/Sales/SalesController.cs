@@ -1,59 +1,37 @@
 using System;
 using System.Threading.Tasks;
-using Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
-using Ambev.DeveloperEvaluation.Application.Sales.GetSale;
+using AutoMapper;
+using MediatR;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
 using Ambev.DeveloperEvaluation.Application.Sales.SearchSales;
+using Ambev.DeveloperEvaluation.Application.Sales.GetSale;
+using Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
 using Ambev.DeveloperEvaluation.Application.Sales.UpdateSale;
 using Ambev.DeveloperEvaluation.Application.Sales.DeleteSale;
-using MediatR;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
+
+using Ambev.DeveloperEvaluation.WebApi.Features.Sales.CreateSale;
+using Ambev.DeveloperEvaluation.WebApi.Features.Sales.UpdateSale;
+using Ambev.DeveloperEvaluation.WebApi.Features.Sales.DeleteSale;
 
 namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales
 {
     [ApiController]
     [Route("api/[controller]")]
-    // Protect all Sales endpoints with JWT authentication
-    [Authorize]
+    [Authorize] // qualquer usuário autenticado pode consultar
     public class SalesController : ControllerBase
     {
         private readonly IMediator _mediator;
+        private readonly IMapper _mapper;
 
-        public SalesController(IMediator mediator)
+        public SalesController(IMediator mediator, IMapper mapper)
         {
             _mediator = mediator;
+            _mapper = mapper;
         }
 
-        /// <summary>
-        /// Create a new Sale
-        /// </summary>
-        [HttpPost]
-        public async Task<ActionResult<CreateSaleResult>> Create([FromBody] CreateSaleCommand command)
-        {
-            var result = await _mediator.Send(command);
-            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
-        }
-
-        /// <summary>
-        /// Get a Sale by Id
-        /// </summary>
-        [HttpGet("{id}")]
-        public async Task<ActionResult<GetSaleResult>> GetById([FromRoute] Guid id)
-        {
-            try
-            {
-                var result = await _mediator.Send(new GetSaleCommand(id));
-                return Ok(result);
-            }
-            catch (InvalidOperationException ex)
-            {
-                return NotFound(new { message = ex.Message });
-            }
-        }
-
-        /// <summary>
-        /// Search sales with pagination and filters
-        /// </summary>
+        // GET /api/Sales
         [HttpGet]
         public async Task<ActionResult<SearchSalesResult>> Search([FromQuery] SearchSalesCommand command)
         {
@@ -61,27 +39,59 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales
             return Ok(result);
         }
 
-        /// <summary>
-        /// Update an existing Sale
-        /// </summary>
-        [HttpPut("{id}")]
-        public async Task<ActionResult<UpdateSaleResult>> Update([FromRoute] Guid id, [FromBody] UpdateSaleCommand command)
+        // GET /api/Sales/{id}
+        [HttpGet("{id}")]
+        public async Task<ActionResult<GetSaleResult>> GetById(Guid id)
         {
-            if (id != command.Id)
-                return BadRequest("Route id and body id must match");
+            var result = await _mediator.Send(new GetSaleCommand(id));
+            if (result == null)
+                return NotFound(new { message = $"Sale with Id '{id}' not found" });
 
-            var result = await _mediator.Send(command);
             return Ok(result);
         }
 
-        /// <summary>
-        /// Delete a Sale by Id
-        /// </summary>
+        // POST /api/Sales
+        // Apenas Admin pode criar vendas
+        [HttpPost]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<CreateSaleResponse>> Create([FromBody] CreateSaleRequest request)
+        {
+            var command = _mapper.Map<CreateSaleCommand>(request);
+            var result = await _mediator.Send(command);
+            var response = _mapper.Map<CreateSaleResponse>(result);
+
+            return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
+        }
+
+        // PUT /api/Sales/{id}
+        // Apenas Admin pode atualizar vendas
+        [HttpPut("{id}")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<UpdateSaleResponse>> Update([FromRoute] Guid id, [FromBody] UpdateSaleRequest request)
+        {
+            // Usar ctor padrão e setar o Id por propriedade
+            var command = _mapper.Map<UpdateSaleCommand>(request) ?? new UpdateSaleCommand();
+
+            command.Id = id;
+
+            var result = await _mediator.Send(command);
+            var response = _mapper.Map<UpdateSaleResponse>(result);
+            return Ok(response);
+        }
+
+        // DELETE /api/Sales/{id}
+        // Apenas Admin pode excluir vendas
         [HttpDelete("{id}")]
-        public async Task<ActionResult<DeleteSaleResult>> Delete([FromRoute] Guid id)
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<DeleteSaleResponse>> Delete([FromRoute] Guid id)
         {
             var result = await _mediator.Send(new DeleteSaleCommand(id));
-            return Ok(result);
+
+            if (!result.Success)
+                return NotFound(new { message = $"Sale with Id '{id}' not found" });
+
+            var response = _mapper.Map<DeleteSaleResponse>(result);
+            return Ok(response);
         }
     }
 }

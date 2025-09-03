@@ -1,70 +1,58 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
+using System;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;
 
-namespace Ambev.DeveloperEvaluation.Common.Security;
-
-/// <summary>
-/// Implementation of JWT (JSON Web Token) generator.
-/// </summary>
-public class JwtTokenGenerator : IJwtTokenGenerator
+namespace Ambev.DeveloperEvaluation.Common.Security
 {
-    private readonly string _secretKey;
-
-    /// <summary>
-    /// Initializes a new instance of the JWT token generator.
-    /// </summary>
-    /// <param name="configuration">Application configuration containing the necessary keys for token generation.</param>
-    public JwtTokenGenerator(IConfiguration configuration)
+    public interface IJwtTokenService
     {
-        _secretKey = configuration["Jwt:SecretKey"]
-            ?? throw new InvalidOperationException("Jwt:SecretKey is missing from configuration.");
+        string Generate(Guid userId, string? email, string? username, string roleName);
     }
 
-    /// <summary>
-    /// Generates a JWT token for a specific user.
-    /// </summary>
-    /// <param name="user">User for whom the token will be generated.</param>
-    /// <returns>Valid JWT token as string.</returns>
-    /// <remarks>
-    /// The generated token includes the following claims:
-    /// - NameIdentifier (User ID)
-    /// - Name (Username)
-    /// - Role (User role)
-    /// 
-    /// The token is valid for 8 hours from the moment of generation.
-    /// </remarks>
-    /// <exception cref="ArgumentNullException">Thrown when user or secret key is not provided.</exception>
-    public string GenerateToken(IUser user)
+    public sealed class JwtTokenService : IJwtTokenService
     {
-        var tokenHandler = new JwtSecurityTokenHandler();
-        var key = CreateSigningKey();
+        private readonly string _issuer;
+        private readonly string _audience;
+        private readonly string _key;
+        private readonly int _expiresMinutes;
 
-        var claims = new[]
+        public JwtTokenService(IConfiguration config)
         {
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Name, user.Username),
-            new Claim(ClaimTypes.Role, user.Role)
-        };
+            _issuer = config["Jwt:Issuer"] ?? "app";
+            _audience = config["Jwt:Audience"] ?? "app";
+            _key = config["Jwt:Key"] ?? throw new InvalidOperationException("Jwt:Key not configured");
+            _expiresMinutes = int.TryParse(config["Jwt:ExpiresMinutes"], out var m) ? m : 60;
+        }
 
-        var tokenDescriptor = new SecurityTokenDescriptor
+        public string Generate(Guid userId, string? email, string? username, string roleName)
         {
-            Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddHours(8),
-            SigningCredentials = new SigningCredentials(
-                key,
-                SecurityAlgorithms.HmacSha256Signature)
-        };
+            if (userId == Guid.Empty) throw new ArgumentException("userId is required", nameof(userId));
+            roleName ??= "User";
 
-        var token = tokenHandler.CreateToken(tokenDescriptor);
-        return tokenHandler.WriteToken(token);
-    }
+            var claims = new[]
+            {
+                new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
+                new Claim(JwtRegisteredClaimNames.Email, email ?? string.Empty),
+                new Claim(ClaimTypes.Name, username ?? string.Empty),
+                new Claim(ClaimTypes.Role, roleName) 
+            };
 
-    private SymmetricSecurityKey CreateSigningKey()
-    {
-        // o ! informa ao analisador que _secretKey não é nula (já garantimos acima)
-        return new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_secretKey!));
+            var keyBytes = Encoding.UTF8.GetBytes(_key);
+            var signingKey = new SymmetricSecurityKey(keyBytes);
+            var creds = new SigningCredentials(signingKey, SecurityAlgorithms.HmacSha256);
+
+            var token = new JwtSecurityToken(
+                issuer: _issuer,
+                audience: _audience,
+                claims: claims,
+                expires: DateTime.UtcNow.AddMinutes(_expiresMinutes),
+                signingCredentials: creds
+            );
+
+            return new JwtSecurityTokenHandler().WriteToken(token);
+        }
     }
 }
