@@ -172,4 +172,12 @@ namespace Ambev.DeveloperEvaluation.ORM.Repositories
             return (items, total);
         }
     }
+
+    public async Task<User> UpdateAsync(User user, CancellationToken cancellationToken = default)
+    {
+        _context.Users.Update(user);
+        await _context.SaveChangesAsync(cancellationToken);
+        return user;
+    }
+
 }

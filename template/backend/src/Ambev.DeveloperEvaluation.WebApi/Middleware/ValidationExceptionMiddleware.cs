@@ -24,6 +24,18 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware
             {
                 await HandleValidationExceptionAsync(context, ex);
             }
+            catch (ArgumentOutOfRangeException ex)
+            {
+                await HandleDomainBadRequestAsync(context, ex.Message);
+            }
+            catch (InvalidOperationException ex)
+            {
+                await HandleDomainBadRequestAsync(context, ex.Message);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                await HandleNotFoundAsync(context, ex.Message);
+            }
         }
 
         private static Task HandleValidationExceptionAsync(HttpContext context, ValidationException exception)
@@ -35,15 +47,42 @@ namespace Ambev.DeveloperEvaluation.WebApi.Middleware
             {
                 Success = false,
                 Message = "Validation Failed",
-                Errors = exception.Errors
-                    .Select(error => (ValidationErrorDetail)error)
+                Errors = exception.Errors.Select(error => (ValidationErrorDetail)error)
             };
 
-            var jsonOptions = new JsonSerializerOptions
+            var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            return context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
+        }
+
+        private static Task HandleDomainBadRequestAsync(HttpContext context, string message)
+        {
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = StatusCodes.Status400BadRequest;
+
+            var response = new ApiResponse
             {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+                Success = false,
+                Message = message,
+                Errors = Enumerable.Empty<ValidationErrorDetail>()
             };
 
+            var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+            return context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
+        }
+
+        private static Task HandleNotFoundAsync(HttpContext context, string message)
+        {
+            context.Response.ContentType = "application/json";
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+
+            var response = new ApiResponse
+            {
+                Success = false,
+                Message = message,
+                Errors = Enumerable.Empty<ValidationErrorDetail>()
+            };
+
+            var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
             return context.Response.WriteAsync(JsonSerializer.Serialize(response, jsonOptions));
         }
     }
