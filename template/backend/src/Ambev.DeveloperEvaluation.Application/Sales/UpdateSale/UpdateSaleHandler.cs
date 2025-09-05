@@ -6,6 +6,7 @@ using Ambev.DeveloperEvaluation.Domain.Repositories;
 using Ambev.DeveloperEvaluation.Domain.Entities;
 using AutoMapper;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace Ambev.DeveloperEvaluation.Application.Sales.UpdateSale
 {
@@ -13,11 +14,13 @@ namespace Ambev.DeveloperEvaluation.Application.Sales.UpdateSale
     {
         private readonly ISaleRepository _repository;
         private readonly IMapper _mapper;
+        private readonly ILogger<UpdateSaleHandler> _logger;
 
-        public UpdateSaleHandler(ISaleRepository repository, IMapper mapper)
+        public UpdateSaleHandler(ISaleRepository repository, IMapper mapper, ILogger<UpdateSaleHandler> logger)
         {
             _repository = repository;
             _mapper = mapper;
+            _logger = logger;
         }
 
         public async Task<UpdateSaleResult> Handle(UpdateSaleCommand request, CancellationToken cancellationToken)
@@ -37,6 +40,23 @@ namespace Ambev.DeveloperEvaluation.Application.Sales.UpdateSale
             }
 
             await _repository.UpdateAsync(sale, cancellationToken);
+
+            // Evento (diferencial): SaleModified
+            _logger.LogInformation(
+                "DomainEvent=SaleModified SaleId={SaleId} Number={Number} Items={Items} TotalAmount={TotalAmount}",
+                sale.Id,
+                sale.Number,
+                sale.Items.Select(i => new
+                {
+                    i.Sku,
+                    i.Name,
+                    i.Quantity,
+                    i.UnitPrice,
+                    i.Discount,
+                    i.Total
+                }),
+                sale.TotalAmount
+            );
 
             return _mapper.Map<UpdateSaleResult>(sale);
         }

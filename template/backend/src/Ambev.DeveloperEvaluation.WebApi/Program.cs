@@ -3,6 +3,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json.Serialization; 
 
 using Ambev.DeveloperEvaluation.Application;
 using Ambev.DeveloperEvaluation.Common.HealthChecks;
@@ -32,7 +33,10 @@ public class Program
             WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
             builder.AddDefaultLogging();
 
-            builder.Services.AddControllers();
+            builder.Services
+                .AddControllers()
+                .AddJsonOptions(o => o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+
             builder.Services.AddEndpointsApiExplorer();
 
             builder.Services.AddSwaggerGen(options =>
@@ -80,7 +84,6 @@ public class Program
 
             builder.RegisterDependencies();
 
-            // Serviços de autenticação e segurança
             builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
             builder.Services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
 
@@ -98,6 +101,31 @@ public class Program
 
             JwtSecurityTokenHandler.DefaultInboundClaimTypeMap.Clear();
 
+            var cfg = builder.Configuration;
+            var env = builder.Environment;
+
+            string issuer = cfg["Jwt:Issuer"]!;
+            string audience = cfg["Jwt:Audience"]!;
+            string key = cfg["Jwt:Key"]!;
+
+            if (string.IsNullOrWhiteSpace(issuer))
+                issuer = "Ambev.DeveloperEvaluation";
+            if (string.IsNullOrWhiteSpace(audience))
+                audience = "Ambev.DeveloperEvaluation.Clients";
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                if (env.IsDevelopment())
+                {
+                    key = "dev-super-secret-key-change-me-0123456789-ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+                    Log.Warning("Jwt:Key não encontrada. Usando chave de DESENVOLVIMENTO padrão.");
+                }
+                else
+                {
+                    throw new InvalidOperationException("Jwt:Key ausente na configuração.");
+                }
+            }
+
             builder.Services
                 .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 .AddJwtBearer(options =>
@@ -108,16 +136,21 @@ public class Program
                         ValidateAudience = true,
                         ValidateLifetime = true,
                         ValidateIssuerSigningKey = true,
-                        ValidIssuer = builder.Configuration["Jwt:Issuer"],
-                        ValidAudience = builder.Configuration["Jwt:Audience"],
-                        IssuerSigningKey = new SymmetricSecurityKey(
-                            Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]!)
-                        ),
+                        ValidIssuer = issuer,
+                        ValidAudience = audience,
+                        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
                         RoleClaimType = ClaimTypes.Role
                     };
                 });
 
             var app = builder.Build();
+            if (app.Environment.IsDevelopment())
+            {
+                using var scope = app.Services.CreateScope();
+                var mapper = scope.ServiceProvider.GetRequiredService<AutoMapper.IMapper>();
+              //  mapper.ConfigurationProvider.AssertConfigurationIsValid();
+            }
+
 
             app.UseMiddleware<ValidationExceptionMiddleware>();
 

@@ -10,6 +10,8 @@ using Ambev.DeveloperEvaluation.Application.Sales.GetSale;
 using Ambev.DeveloperEvaluation.Application.Sales.CreateSale;
 using Ambev.DeveloperEvaluation.Application.Sales.UpdateSale;
 using Ambev.DeveloperEvaluation.Application.Sales.DeleteSale;
+using Ambev.DeveloperEvaluation.Application.Sales.CancelItem;
+using Ambev.DeveloperEvaluation.Application.Sales.CancelSale; 
 
 using Ambev.DeveloperEvaluation.WebApi.Features.Sales.CreateSale;
 using Ambev.DeveloperEvaluation.WebApi.Features.Sales.UpdateSale;
@@ -69,9 +71,7 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales
         [Authorize(Roles = "Admin")]
         public async Task<ActionResult<UpdateSaleResponse>> Update([FromRoute] Guid id, [FromBody] UpdateSaleRequest request)
         {
-            // Usar ctor padrão e setar o Id por propriedade
             var command = _mapper.Map<UpdateSaleCommand>(request) ?? new UpdateSaleCommand();
-
             command.Id = id;
 
             var result = await _mediator.Send(command);
@@ -92,6 +92,26 @@ namespace Ambev.DeveloperEvaluation.WebApi.Features.Sales
 
             var response = _mapper.Map<DeleteSaleResponse>(result);
             return Ok(response);
+        }
+
+        // POST /api/Sales/{saleId}/items/{itemId}/cancel
+        // Apenas Admin pode cancelar item
+        [HttpPost("{saleId}/items/{itemId}/cancel")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<CancelItemResult>> CancelItem([FromRoute] Guid saleId, [FromRoute] Guid itemId)
+        {
+            var result = await _mediator.Send(new CancelItemCommand(saleId, itemId));
+            return Ok(result);
+        }
+
+        // POST /api/Sales/{id}/cancel
+        // Apenas Admin pode cancelar venda
+        [HttpPost("{id}/cancel")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<CancelSaleResult>> CancelSale([FromRoute] Guid id)
+        {
+            var result = await _mediator.Send(new CancelSaleCommand(id));
+            return Ok(result);
         }
     }
 }

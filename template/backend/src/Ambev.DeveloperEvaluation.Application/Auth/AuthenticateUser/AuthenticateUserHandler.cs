@@ -1,23 +1,20 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
-using Ambev.DeveloperEvaluation.Domain.Entities;
 using Ambev.DeveloperEvaluation.Domain.Repositories;
 using MediatR;
-using Microsoft.Extensions.Configuration;
-using Microsoft.IdentityModel.Tokens;
+using Ambev.DeveloperEvaluation.Common.Security; // usar serviço central de JWT
 
 namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
 {
     public sealed class AuthenticateUserHandler : IRequestHandler<AuthenticateUserRequest, AuthenticateUserResponse>
     {
         private readonly IUserRepository _users;
-        private readonly IConfiguration _config;
+        private readonly IJwtTokenService _tokens;
 
-        public AuthenticateUserHandler(IUserRepository users, IConfiguration config)
+        public AuthenticateUserHandler(IUserRepository users, IJwtTokenService tokens)
         {
             _users = users;
-            _config = config;
+            _tokens = tokens;
         }
 
         public async Task<AuthenticateUserResponse> Handle(AuthenticateUserRequest request, CancellationToken ct)
@@ -32,11 +29,10 @@ namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
             if (user is null)
                 throw new UnauthorizedAccessException("Usuário ou senha inválidos.");
 
-            // Verificação de senha (ajuste se sua entidade usar PasswordHash)
             if (!BCrypt.Net.BCrypt.Verify(password, user.Password))
                 throw new UnauthorizedAccessException("Usuário ou senha inválidos.");
 
-            var token = BuildJwtFromConfig(_config, user);
+            var token = _tokens.Generate(user.Id, user.Email, null, user.Role.ToString());
 
             return new AuthenticateUserResponse
             {
@@ -44,38 +40,6 @@ namespace Ambev.DeveloperEvaluation.Application.Auth.AuthenticateUser
                 Email = user.Email,
                 Role = user.Role.ToString()
             };
-        }
-
-        private static string BuildJwtFromConfig(IConfiguration config, User user)
-        {
-            string? issuer = config["Jwt:Issuer"];
-            string? audience = config["Jwt:Audience"];
-            string? key = config["Jwt:Key"];
-
-            issuer ??= "TestIssuer";
-            audience ??= "TestAudience";
-            if (string.IsNullOrWhiteSpace(key))
-                throw new InvalidOperationException("Jwt:Key não configurado.");
-
-            var securityKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key));
-            var creds = new SigningCredentials(securityKey, SecurityAlgorithms.HmacSha256);
-
-            var claims = new[]
-            {
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-                new Claim(ClaimTypes.Role, user.Role.ToString())
-            };
-
-            var jwt = new JwtSecurityToken(
-                issuer: issuer,
-                audience: audience,
-                claims: claims,
-                notBefore: DateTime.UtcNow.AddMinutes(-1),
-                expires: DateTime.UtcNow.AddMinutes(60),
-                signingCredentials: creds);
-
-            return new JwtSecurityTokenHandler().WriteToken(jwt);
         }
     }
 }
