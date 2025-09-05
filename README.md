@@ -1,110 +1,194 @@
-﻿# Ambev Developer Evaluation — API
+﻿Ambev Developer Evaluation — API (.NET 8)
+📌 Visão Geral
 
-## Como rodar
-```bash
+Projeto desenvolvido como parte do desafio Developer Evaluation Project.
+API em .NET 8 com arquitetura DDD + CQRS + MediatR + EF Core + AutoMapper + JWT (Bearer) + Swagger + Serilog.
+
+Funcionalidades:
+
+CRUD completo de Sales (com itens).
+
+Regras de desconto por quantidade e limite de 20 unidades.
+
+Cancelamento de venda e cancelamento de item.
+
+Logs de eventos de domínio (SaleCreated, SaleModified, SaleCancelled, ItemCancelled).
+
+Autenticação e autorização com JWT.
+
+⚙️ Como Rodar
+Pré-requisitos
+
+.NET 8 SDK
+
+PostgreSQL
+ ou Docker
+
+Clonar e restaurar
+git clone https://github.com/LeandroRodrigo10/desafio-dotnet.git
+cd desafio-dotnet/template/backend
 dotnet restore
-dotnet build -c Release
+
+Banco de Dados
+
+Rodar com Docker:
+
+docker run -d --name ambev-pg -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=ambev -p 5432:5432 postgres:16
+
+
+Configurar appsettings.Development.json:
+
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=ambev;Username=postgres;Password=dev"
+  },
+  "Jwt": {
+    "Issuer": "Ambev.DeveloperEvaluation",
+    "Audience": "Ambev.DeveloperEvaluation.Clients",
+    "Key": "dev-super-secret-key-change-me-0123456789"
+  }
+}
+
+
+Criar/migrar DB:
+
+dotnet ef database update --project src/Ambev.DeveloperEvaluation.WebApi
+
+Rodar API
 dotnet run --project src/Ambev.DeveloperEvaluation.WebApi
-```
-**Swagger:** abra `https://localhost:7181/swagger` (ou a porta exibida no console).
 
----
 
-## Autenticação (JWT)
+Swagger: https://localhost:7181/swagger
 
-1) **Criar usuário** (`POST /api/Users`)
-```json
+🔐 Autenticação
+
+Criar usuário Admin:
+
+POST /api/Users
 {
-  "username": "Admin",
-  "email": "admin@example.com",
-  "phone": "55999999999",
-  "role": "Admin",
-  "status": "Active",
-  "password": "Pass@123"
+  "username":"Admin",
+  "email":"admin@example.com",
+  "phone":"55999999999",
+  "role":"Admin",
+  "status":"Active",
+  "password":"Pass@123"
 }
-```
 
-2) **Login** (`POST /api/Auth`)
-```json
+
+Login:
+
+POST /api/Auth
 {
-  "email": "admin@example.com",
-  "password": "Pass@123"
+  "email":"admin@example.com",
+  "password":"Pass@123"
 }
-```
 
-3) **Autorizar no Swagger**  
-Clique em **Authorize** (cadeado) e cole: `Bearer {seu_token}`.
 
----
+No Swagger, clique em Authorize e cole:
 
-## Domínio de Vendas
+Bearer {seu_token}
 
-**Regras por quantidade (por item):**
-- 1–3: **0%**
-- 4–9: **10%**
-- 10–20: **20%**
-- **Máximo 20** unidades por item → **400 BadRequest**
-
-**Cálculo:**
-- `discount` é aplicado **por unidade** (0/10/20% de `unitPrice`).
-- `totalAmount` = soma dos itens **não cancelados**.
-
-**Exemplo — Criar venda** (`POST /api/Sales`)
-```json
+🛒 Endpoints Principais
+Criar venda
+POST /api/Sales
 {
-  "number": "S-0002",
-  "date": "2025-09-04T19:45:00Z",
-  "customer": "ACME Ltda",
+  "number": "S-0003",
+  "date": "2025-09-05T12:00:00Z",
+  "customerId": "CUST-123",
+  "customer": "Cliente Demo",
+  "branchId": "BR-001",
   "branch": "Loja Centro",
   "items": [
-    { "sku": "P001", "name": "Caneta",  "quantity": 5,  "unitPrice": 2.50, "discount": 0 },
-    { "sku": "P002", "name": "Caderno", "quantity": 12, "unitPrice": 10.00, "discount": 0 }
+    { "sku": "P001", "name": "Caneta Azul", "quantity": 5,  "unitPrice": 2.50 },
+    { "sku": "P002", "name": "Caderno",     "quantity": 12, "unitPrice": 10.00 }
   ]
 }
-```
 
-**Resposta (esperado):**
-- `discount` ≈ **0.25** (10%) e **2.00** (20%)
-- `totalAmount` ≈ **107.25**
 
-**Cancelar venda** (`POST /api/Sales/{id}/cancel`) → `status: "Cancelled"`.
+Resposta (201 Created):
 
----
-
-## Users (CRUD)
-
-- `POST /api/Users` — criar  
-- `GET /api/Users/{id}` — obter  
-- `PUT /api/Users/{id}` — atualizar
-```json
 {
-  "id": "GUID_DO_USUARIO",
-  "username": "Nome Atualizado",
-  "phone": "61999998888",
-  "role": "Admin",
-  "status": "Active"
+  "id": "uuid",
+  "number": "S-0003",
+  "date": "2025-09-05T12:00:00Z",
+  "customer": "Cliente Demo",
+  "branch": "Loja Centro",
+  "status": "Active",
+  "total": 107.25,
+  "items": [
+    {
+      "id": "uuid",
+      "sku": "P001",
+      "name": "Caneta Azul",
+      "quantity": 5,
+      "unitPrice": 2.5,
+      "discount": 0.25,
+      "total": 11.25
+    },
+    {
+      "id": "uuid",
+      "sku": "P002",
+      "name": "Caderno",
+      "quantity": 12,
+      "unitPrice": 10,
+      "discount": 2,
+      "total": 96
+    }
+  ]
 }
-```
-- `DELETE /api/Users/{id}` — excluir
 
----
+Cancelar venda
+POST /api/Sales/{id}/cancel
 
-## Testes e Cobertura
-```bash
-dotnet test Ambev.DeveloperEvaluation.sln -c Release --collect:"XPlat Code Coverage"
-reportgenerator -reports:"**/TestResults/*/coverage.cobertura.xml" -targetdir:"coverage-report" -reporttypes:Html
-```
-Abra `coverage-report/index.html`.
 
----
+Retorna a venda com status = "Cancelled".
 
-## Health Check
-`GET /health` — verificação simples da aplicação.
+Cancelar item
+POST /api/Sales/{saleId}/items/{itemId}/cancel
 
----
 
-## Observações Técnicas
-- Arquitetura: DDD + CQRS + MediatR + AutoMapper + EF Core
-- Swagger com **JWT Bearer** habilitado
-- Middleware traduz exceções de domínio (ex.: quantidade > 20) para **400 BadRequest**
-- Diferencial: eventos podem ser logados em criação/alteração/cancelamento
+Retorna a venda com o item cancelado (isCancelled = true) e total recalculado.
+
+📊 Regras de Negócio
+
+1–3 itens → 0% desconto
+
+4–9 itens → 10% desconto
+
+10–20 itens → 20% desconto
+
+>20 itens → proibido (400 Bad Request)
+
+✅ Testes
+
+Rodar testes:
+
+dotnet test -c Release
+
+
+⚠️ Se rodar fora de Development, definir variáveis de ambiente:
+
+$env:ASPNETCORE_ENVIRONMENT = "Development"
+$env:Jwt__Key = "test-secret-key"
+
+
+Cobertura de testes:
+
+dotnet test --collect:"XPlat Code Coverage"
+
+
+Abrir relatório em coverage-report/index.html.
+
+🛠️ Stack
+
+.NET 8, C#
+
+EF Core + PostgreSQL
+
+CQRS + MediatR + AutoMapper
+
+Serilog (logs)
+
+Swagger/OpenAPI
+
+xUnit (unit, integration, functional tests)
